@@ -52,6 +52,7 @@
 #include <torrent/utils/log.h>
 #include <rak/functional.h>
 #include <rak/error_number.h>
+#include <rak/file_stat.h>
 
 #ifdef USE_EXECINFO
 #include <execinfo.h>
@@ -120,11 +121,18 @@ void
 load_session_torrents() {
   utils::Directory entries = control->core()->download_store()->get_formated_entries();
 
-  for (utils::Directory::const_iterator first = entries.begin(), last = entries.end(); first != last; ++first) {
+  std::vector<std::pair<time_t, utils::directory_entry>> sorted;
+  std::for_each(entries.begin(), entries.end(), [&sorted](auto en) { 
+    rak::file_stat st;
+    st.update(en.d_name);
+    return std::make_pair(st.modified_time(), en);
+   });
+
+  for (const auto& [mtime, entry] : sorted) {
     // We don't really support session torrents that are links. These
     // would be overwritten anyway on exit, and thus not really be
     // useful.
-    if (!first->is_file())
+    if (!entry.is_file())
       continue;
 
     core::DownloadFactory* f = new core::DownloadFactory(control->core());
@@ -132,7 +140,7 @@ load_session_torrents() {
     // Replace with session torrent flag.
     f->set_session(true);
     f->slot_finished(std::bind(&rak::call_delete_func<core::DownloadFactory>, f));
-    f->load(entries.path() + first->d_name);
+    f->load(entries.path() + entry.d_name);
     f->commit();
   }
 }
