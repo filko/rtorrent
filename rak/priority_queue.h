@@ -47,41 +47,78 @@
 namespace rak {
 
 template <typename Value, typename Compare, typename Equal, typename Alloc = std::allocator<Value> >
-class priority_queue : public std::vector<Value, Alloc> {
+class priority_queue : public std::vector<std::pair<Value, uint64_t>, Alloc> {
 public:
-  typedef std::vector<Value, Alloc>           base_type;
-  typedef typename base_type::reference       reference;
-  typedef typename base_type::const_reference const_reference;
-  typedef typename base_type::iterator        iterator;
-  typedef typename base_type::const_iterator  const_iterator;
-  typedef typename base_type::value_type      value_type;
+  using LocalValue = std::pair<Value, uint64_t>;
+  using RealCompare = bool(*)(const LocalValue&, const LocalValue);
+  RealCompare realCompare;
 
-  using base_type::begin;
-  using base_type::end;
+  typedef std::vector<LocalValue, Alloc>           base_type;
+  typedef  Value&                     reference;
+  typedef const Value&               const_reference;
+  struct iterator :public std::iterator<std::random_access_iterator_tag, Value> {
+    bool operator!=(const iterator& rhs) const {
+      return base_ != rhs.base_;
+    }
+    bool operator==(const iterator& rhs) const {
+      return base_ != rhs.base_;
+    }
+    typename base_type::iterator base() const {
+      return base_;
+    }
+    int operator-(const iterator& rhs) const {
+      return base_ - rhs.base_;
+    }
+    iterator operator+(int i) const {
+      return base_ + i;
+    }
+    iterator& operator++() {
+      ++base_;
+      return *this;
+    }
+    const Value& operator*() const {
+      return *base_;
+    }
+
+    iterator() = default;
+    iterator(const typename base_type::iterator& b) : base_(b) {}
+
+    typename base_type::iterator base_;
+  };
+  struct const_iterator {};
+  typedef Value      value_type;
+
+  uint64_t next = 0;
+
+  iterator begin() { return iterator(base_type::begin()); }
+  iterator end() { return iterator(base_type::end()); }
   using base_type::size;
   using base_type::empty;
   using base_type::clear;
 
   priority_queue(Compare l = Compare(), Equal e = Equal())
-    : m_compare(l), m_equal(e) {}
+    : m_compare(l), m_equal(e), realCompare(
+      
+    ) {}
 
   const_reference top() const {
-    return base_type::front();
+    return base_type::front().first;
   }
 
   void pop() {
-    std::pop_heap(begin(), end(), m_compare);
+    std::pop_heap(base_type::begin(), base_type::end(), realCompare);
     base_type::pop_back();
   }
 
   void push(const value_type& value) {
-    base_type::push_back(value);
-    std::push_heap(begin(), end(), m_compare);
+    base_type::push_back(std::make_pair(value, ++next));
+    std::push_heap(base_type::begin(), base_type::end(), realCompare);
   }
 
   template <typename Key>
   iterator find(const Key& key) {
-    return std::find_if(begin(), end(), std::bind2nd(m_equal, key));
+    return std::find_if(base_type::begin(), base_type::end(), 
+      [&key, this](auto el) { return m_equal(key, el.first); });
   }
 
   template <typename Key>
@@ -91,7 +128,7 @@ public:
     if (itr == end())
       return false;
 
-    erase(itr);
+    base_type::erase(itr.base());
     return true;
   }
 
@@ -101,7 +138,7 @@ public:
   void erase(iterator itr) {
 //     std::push_heap(begin(), ++itr, m_compare);
 //     pop();
-    base_type::erase(itr);
+    base_type::erase(itr.base());
     std::make_heap(begin(), end(), m_compare);
   }
 
